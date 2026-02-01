@@ -11,22 +11,15 @@ end)
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
-
 local lp = Players.LocalPlayer
 
 -- ===== LOAD GUI =====
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 -- ===== STATE =====
-local StealFinder = false
-local GoToSteal = false
-local AutoSell = false
-local StealHop = false
-local InstantPP = true
-
-local StealKeyword = "steal"
-local SellKeyword = "sell"
-
+local StealFinder, GoToSteal, AutoSell, StealHop = false, false, false, false
+local VoidSteal, StealProtecter = false, false
+local StealKeyword, SellKeyword = "steal", "sell"
 local respawnCF
 
 -- ===== WINDOW =====
@@ -48,116 +41,93 @@ end)
 local Stealer = Window:CreateTab("Stealer", 4483362458)
 local More = Window:CreateTab("More", 4483362458)
 
--- ===== UI =====
+-- ===== UI TOGGLES =====
 Stealer:CreateToggle({Name="Steal Finder", Callback=function(v) StealFinder=v end})
 Stealer:CreateToggle({Name="Go To Steal", Callback=function(v) GoToSteal=v end})
 Stealer:CreateToggle({Name="Auto Sell", Callback=function(v) AutoSell=v end})
 Stealer:CreateToggle({Name="Steal Hop", Callback=function(v) StealHop=v end})
+Stealer:CreateToggle({Name="Void Steal", Callback=function(v) VoidSteal=v end})
+Stealer:CreateToggle({Name="Steal Protecter", Callback=function(v) StealProtecter=v end})
 
-Stealer:CreateButton({
-	Name="Back to Respawn",
-	Callback=function()
-		if respawnCF and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-			lp.Character.HumanoidRootPart.CFrame = respawnCF
-		end
+Stealer:CreateButton({Name="Back to Respawn", Callback=function()
+	if respawnCF and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+		lp.Character.HumanoidRootPart.CFrame = respawnCF
 	end
-})
-
-More:CreateToggle({
-	Name="Instant ProximityPrompt (ALL)",
-	CurrentValue=true,
-	Callback=function(v) InstantPP=v end
-})
-
-More:CreateInput({
-	Name="Steal Keyword",
-	PlaceholderText="steal",
-	Callback=function(v)
-		if v ~= "" then StealKeyword = v:lower() end
-	end
-})
-
-More:CreateInput({
-	Name="Sell Keyword",
-	PlaceholderText="sell",
-	Callback=function(v)
-		if v ~= "" then SellKeyword = v:lower() end
-	end
-})
+end})
 
 -- ===== CHARACTER TRACK =====
 local function onChar(char)
 	task.wait(1)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		respawnCF = hrp.CFrame
-	end
+	if hrp then respawnCF = hrp.CFrame end
 end
 if lp.Character then onChar(lp.Character) end
 lp.CharacterAdded:Connect(onChar)
 
--- ===== INSTANT PROXIMITY (INCLUYE NUEVOS) =====
-local function setupPrompt(p)
-	if p:IsA("ProximityPrompt") and InstantPP then
-		p.HoldDuration = 0
-	end
-end
-
-for _,v in ipairs(workspace:GetDescendants()) do
-	setupPrompt(v)
-end
-
-workspace.DescendantAdded:Connect(function(v)
-	setupPrompt(v)
-end)
-
--- ===== MAIN LOGIC (LIGERO) =====
+-- ===== MAIN LOOP ULTRA-LIGERO =====
 task.spawn(function()
 	while true do
 		local char = lp.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		local found = false
 
-		for _,p in ipairs(workspace:GetDescendants()) do
-			if p:IsA("ProximityPrompt") and p.Enabled then
-				local txt = ((p.Name or "")..(p.ActionText or "")..(p.ObjectText or "")):lower()
+		if hrp then
+			-- VOID STEAL
+			if VoidSteal then
+				hrp.CFrame = hrp.CFrame * CFrame.new(0,1,0)
+				task.wait(0.1)
+				hrp.CFrame = hrp.CFrame * CFrame.new(0,-1,0)
+			end
 
-				if txt:find(StealKeyword) then
-					found = true
+			-- STEAL PROTECTER (AntiHit/AntiFling/AntiVoid)
+			if StealProtecter then
+				hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+				if hum then hum.PlatformStand = false end
+				if hrp.Position.Y < 5 then
+					hrp.CFrame = respawnCF or CFrame.new(hrp.Position.X,10,hrp.Position.Z)
+				end
+			end
 
-					if StealFinder then
+			-- PROXIMITY PROMPTS
+			for _,p in ipairs(workspace:GetDescendants()) do
+				if p:IsA("ProximityPrompt") and p.Enabled then
+					local txt = ((p.Name or "")..(p.ActionText or "")..(p.ObjectText or "")):lower()
+
+					-- STEAL
+					if txt:find(StealKeyword) then
+						found = true
+						if StealFinder then fireproximityprompt(p) end
+						if GoToSteal then
+							local part = p.Parent
+							while part and not part:IsA("BasePart") do part = part.Parent end
+							if part then
+								hrp.CFrame = part.CFrame * CFrame.new(0,0,-2)
+								task.wait(0.05)
+								fireproximityprompt(p)
+							end
+						end
+					end
+
+					-- AUTO SELL SOLO PARA "sell"
+					if AutoSell and txt:find(SellKeyword) then
 						fireproximityprompt(p)
 					end
-
-					if GoToSteal and hrp then
-						local part = p.Parent
-						while part and not part:IsA("BasePart") do
-							part = part.Parent
-						end
-						if part then
-							hrp.CFrame = part.CFrame * CFrame.new(0,0,-2)
-							task.wait(0.05)
-							fireproximityprompt(p)
-						end
-					end
 				end
+			end
 
-				if AutoSell and txt:find(SellKeyword) then
-					fireproximityprompt(p)
-				end
+			if StealHop and not found then
+				TeleportService:Teleport(game.PlaceId)
 			end
 		end
 
-		if StealHop and not found then
-			TeleportService:Teleport(game.PlaceId)
-		end
-
-		task.wait(0.6)
+		task.wait(0.15)
 	end
 end)
 
 Rayfield:Notify({
 	Title="Kill Game",
-	Content="Stable version loaded",
+	Content="Stable version with VoidSteal, Protecter & AutoSell filtered loaded",
 	Duration=3
 })
