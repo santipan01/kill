@@ -1,0 +1,224 @@
+-- ===== ANTIDUPE RAYFIELD =====
+pcall(function()
+	for _, v in ipairs(game:GetService("CoreGui"):GetChildren()) do
+		if v.Name:lower():find("rayfield") then
+			v:Destroy()
+		end
+	end
+end)
+
+-- ===== SERVICES =====
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local UserInputService = game:GetService("UserInputService")
+local workspace = game:GetService("Workspace")
+local lp = Players.LocalPlayer
+
+-- ===== LOAD UI =====
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- ===== STATE =====
+local StealFinder = false
+local GoToSteal = false
+local AutoSell = false
+local StealHop = false
+local VoidSteal = false
+local StealProtecter = false
+local StealKeyword = "steal"
+local SellKeyword = "sell"
+local respawnCF
+
+-- ===== WINDOW =====
+local Window = Rayfield:CreateWindow({
+	Name = "Kill Game v2",
+	LoadingTitle = "Kill Game v2",
+	LoadingSubtitle = "Universal Utility",
+	Theme = "Dark",
+	ConfigurationSaving = { Enabled = false }
+})
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.LeftControl then
+		Rayfield:ToggleWindow()
+	end
+end)
+
+-- ===== TABS =====
+local Stealer = Window:CreateTab("Automation", 4483362458)
+local More = Window:CreateTab("Controls", 4483362458)
+
+Stealer:CreateSection("Steal Actions")
+Stealer:CreateToggle({
+	Name = "Search Steal Prompts",
+	CurrentValue = false,
+	Callback = function(value)
+		StealFinder = value
+	end
+})
+
+Stealer:CreateToggle({
+	Name = "Move to Steal Prompt",
+	CurrentValue = false,
+	Callback = function(value)
+		GoToSteal = value
+	end
+})
+
+Stealer:CreateToggle({
+	Name = "Auto Sell",
+	CurrentValue = false,
+	Callback = function(value)
+		AutoSell = value
+	end
+})
+
+Stealer:CreateToggle({
+	Name = "Teleport Hop if Idle",
+	CurrentValue = false,
+	Callback = function(value)
+		StealHop = value
+	end
+})
+
+Stealer:CreateSection("Safety")
+Stealer:CreateToggle({
+	Name = "Void Movement",
+	CurrentValue = false,
+	Callback = function(value)
+		VoidSteal = value
+	end
+})
+
+Stealer:CreateToggle({
+	Name = "Position Protection",
+	CurrentValue = false,
+	Callback = function(value)
+		StealProtecter = value
+	end
+})
+
+More:CreateSection("Session")
+More:CreateButton({
+	Name = "Return to Respawn",
+	Callback = function()
+		if respawnCF and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+			lp.Character.HumanoidRootPart.CFrame = respawnCF
+		end
+	end
+})
+
+-- ===== CHARACTER TRACK =====
+local function onChar(char)
+	task.wait(1)
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		respawnCF = hrp.CFrame
+	end
+end
+
+if lp.Character then
+	onChar(lp.Character)
+end
+
+lp.CharacterAdded:Connect(onChar)
+
+-- ===== PROMPT TRACKING =====
+local ProximityPrompts = {}
+
+local function registerPrompt(prompt)
+	if not prompt:IsA("ProximityPrompt") then
+		return
+	end
+	ProximityPrompts[prompt] = true
+	prompt.AncestryChanged:Connect(function()
+		if not prompt:IsDescendantOf(workspace) then
+			ProximityPrompts[prompt] = nil
+		end
+	end)
+end
+
+for _, desc in ipairs(workspace:GetDescendants()) do
+	registerPrompt(desc)
+end
+
+workspace.DescendantAdded:Connect(registerPrompt)
+workspace.DescendantRemoving:Connect(function(desc)
+	if ProximityPrompts[desc] then
+		ProximityPrompts[desc] = nil
+	end
+end)
+
+local function findBasePart(obj)
+	local current = obj
+	while current and not current:IsA("BasePart") do
+		current = current.Parent
+	end
+	return current
+end
+
+-- ===== MAIN LOOP =====
+task.spawn(function()
+	while true do
+		local char = lp.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		local found = false
+
+		if hrp then
+			if VoidSteal then
+				hrp.CFrame = hrp.CFrame * CFrame.new(0, 1, 0)
+				task.wait(0.1)
+				hrp.CFrame = hrp.CFrame * CFrame.new(0, -1, 0)
+			end
+
+			if StealProtecter then
+				hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+				if hum then
+					hum.PlatformStand = false
+				end
+				if hrp.Position.Y < 5 then
+					hrp.CFrame = respawnCF or CFrame.new(hrp.Position.X, 10, hrp.Position.Z)
+				end
+			end
+
+			for prompt in pairs(ProximityPrompts) do
+				if not prompt or not prompt.Enabled then
+					ProximityPrompts[prompt] = nil
+				else
+					local text = ((prompt.Name or "") .. (prompt.ActionText or "") .. (prompt.ObjectText or "")):lower()
+					if text:find(StealKeyword) then
+						found = true
+						if StealFinder then
+							fireproximityprompt(prompt)
+						end
+						if GoToSteal then
+							local part = findBasePart(prompt.Parent)
+							if part then
+								hrp.CFrame = part.CFrame * CFrame.new(0, 0, -2)
+								task.wait(0.05)
+								fireproximityprompt(prompt)
+							end
+						end
+					end
+
+					if AutoSell and text:find(SellKeyword) then
+						fireproximityprompt(prompt)
+					end
+				end
+			end
+
+			if StealHop and not found then
+				TeleportService:Teleport(game.PlaceId)
+			end
+		end
+
+		task.wait(0.2)
+	end
+end)
+
+Rayfield:Notify({
+	Title = "Kill Game v2",
+	Content = "Utility ready. Automation and safety controls are active.",
+	Duration = 3
+})
